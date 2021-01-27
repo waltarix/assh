@@ -59,7 +59,7 @@ type Host struct {
 	HashKnownHosts                   string                    `yaml:"hashknownhosts,omitempty,flow" json:"HashKnownHosts,omitempty"`
 	HostbasedAuthentication          string                    `yaml:"hostbasedauthentication,omitempty,flow" json:"HostbasedAuthentication,omitempty"`
 	HostbasedKeyTypes                string                    `yaml:"hostbasedkeytypes,omitempty,flow" json:"HostbasedKeyTypes,omitempty"`
-	HostKeyAlgorithms                string                    `yaml:"hostkeyalgorithms,omitempty,flow" json:"HostKeyAlgorithms,omitempty"`
+	HostKeyAlgorithms                composeyaml.Stringorslice `yaml:"hostkeyalgorithms,omitempty,flow" json:"HostKeyAlgorithms,omitempty"`
 	HostKeyAlias                     string                    `yaml:"hostkeyalias,omitempty,flow" json:"HostKeyAlias,omitempty"`
 	IdentitiesOnly                   string                    `yaml:"identitiesonly,omitempty,flow" json:"IdentitiesOnly,omitempty"`
 	IdentityFile                     composeyaml.Stringorslice `yaml:"identityfile,omitempty,flow" json:"IdentityFile,omitempty"`
@@ -128,6 +128,7 @@ type Host struct {
 
 	// private assh fields
 	noAutomaticRewrite bool
+	useProxyJump       bool
 	knownHosts         []string
 	pattern            string
 	name               string
@@ -369,8 +370,8 @@ func (h *Host) Options() OptionsList {
 	if h.HostbasedKeyTypes != "" {
 		options = append(options, Option{Name: "HostbasedKeyTypes", Value: h.HostbasedKeyTypes})
 	}
-	if h.HostKeyAlgorithms != "" {
-		options = append(options, Option{Name: "HostKeyAlgorithms", Value: h.HostKeyAlgorithms})
+	if len(h.HostKeyAlgorithms) > 0 {
+		options = append(options, Option{Name: "HostKeyAlgorithms", Value: strings.Join(h.HostKeyAlgorithms, ",")})
 	}
 	if h.HostKeyAlias != "" {
 		options = append(options, Option{Name: "HostKeyAlias", Value: h.HostKeyAlias})
@@ -785,10 +786,10 @@ func (h *Host) ApplyDefaults(defaults *Host) {
 	}
 	h.HostbasedKeyTypes = utils.ExpandField(h.HostbasedKeyTypes)
 
-	if h.HostKeyAlgorithms == "" {
+	if len(h.HostKeyAlgorithms) == 0 {
 		h.HostKeyAlgorithms = defaults.HostKeyAlgorithms
 	}
-	h.HostKeyAlgorithms = utils.ExpandField(h.HostKeyAlgorithms)
+	h.HostKeyAlgorithms = utils.ExpandSliceField(h.HostKeyAlgorithms)
 
 	if h.HostKeyAlias == "" {
 		h.HostKeyAlias = defaults.HostKeyAlias
@@ -1268,8 +1269,8 @@ func (h *Host) WriteSSHConfigTo(w io.Writer) error {
 		if h.HostbasedKeyTypes != "" {
 			_, _ = fmt.Fprintf(w, "  HostbasedKeyTypes %s\n", h.HostbasedKeyTypes)
 		}
-		if h.HostKeyAlgorithms != "" {
-			_, _ = fmt.Fprintf(w, "  HostKeyAlgorithms %s\n", h.HostKeyAlgorithms)
+		if len(h.HostKeyAlgorithms) > 0 {
+			_, _ = fmt.Fprintf(w, "  HostKeyAlgorithms %s\n", strings.Join(h.HostKeyAlgorithms, ","))
 		}
 		if h.HostKeyAlias != "" {
 			_, _ = fmt.Fprintf(w, "  HostKeyAlias %s\n", h.HostKeyAlias)
@@ -1418,10 +1419,14 @@ func (h *Host) WriteSSHConfigTo(w io.Writer) error {
 
 		// ssh-config fields with a different behavior
 		if h.isDefault {
-			if h.noAutomaticRewrite {
-				_, _ = fmt.Fprintf(w, "  ProxyCommand %s connect --no-rewrite --port=%%p %%h\n", asshBinaryPath)
+			if h.useProxyJump {
+				_, _ = fmt.Fprint(w, "  # assh will not be used\n")
 			} else {
-				_, _ = fmt.Fprintf(w, "  ProxyCommand %s connect --port=%%p %%h\n", asshBinaryPath)
+				if h.noAutomaticRewrite {
+					_, _ = fmt.Fprintf(w, "  ProxyCommand %s connect --no-rewrite --port=%%p %%h\n", asshBinaryPath)
+				} else {
+					_, _ = fmt.Fprintf(w, "  ProxyCommand %s connect --port=%%p %%h\n", asshBinaryPath)
+				}
 			}
 		} else {
 			if h.ProxyCommand != "" {
@@ -1431,7 +1436,11 @@ func (h *Host) WriteSSHConfigTo(w io.Writer) error {
 
 		// assh fields
 		if h.HostName != "" {
-			_, _ = fmt.Fprint(w, stringComment("HostName", h.HostName))
+			if h.useProxyJump {
+				_, _ = fmt.Fprintf(w, "  HostName %s\n", h.HostName)
+			} else {
+				_, _ = fmt.Fprint(w, stringComment("HostName", h.HostName))
+			}
 		}
 		if BoolVal(h.ControlMasterMkdir) {
 			_, _ = fmt.Fprint(w, "  # ControlMasterMkdir: true\n")
@@ -1440,7 +1449,11 @@ func (h *Host) WriteSSHConfigTo(w io.Writer) error {
 			_, _ = fmt.Fprint(w, sliceComment("Inherits", h.Inherits))
 		}
 		if len(h.Gateways) > 0 {
-			_, _ = fmt.Fprint(w, sliceComment("Gateways", h.Gateways))
+			if h.useProxyJump {
+				_, _ = fmt.Fprintf(w, "  ProxyJump %s\n", strings.Join(h.Gateways, ","))
+			} else {
+				_, _ = fmt.Fprint(w, sliceComment("Gateways", h.Gateways))
+			}
 		}
 		if len(h.Comment) > 0 {
 			_, _ = fmt.Fprint(w, sliceComment("Comment", h.Comment))

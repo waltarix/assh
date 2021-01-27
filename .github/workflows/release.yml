@@ -1,13 +1,49 @@
-name: Semantic Release
+name: Release
 
-on: push
+on:
+  push:
+    tags:
+      - 'v*.*.*-custom'
+      - 'v*.*.*-custom-r*'
 
 jobs:
-  semantic-release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            go-stable: true
+            go-version: ''
+            go-arch: amd64
+          - os: macos-latest
+            go-stable: true
+            go-version: ''
+            go-arch: amd64
+          - os: macos-latest
+            go-stable: false
+            go-version: 1.16.0-rc1
+            go-arch: arm64
+
+    runs-on: ${{ matrix.os }}
+
     steps:
-      - uses: actions/checkout@master
-      - uses: codfish/semantic-release-action@v1
-        if: github.ref == 'refs/heads/master'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup Go
+      uses: actions/setup-go@v2
+      with:
+        stable: ${{ matrix.go-stable }}
+        go-version: ${{ matrix.go-version }}
+
+    - name: Build
+      run: make -f Makefile.custom release REVISION=custom
+      env:
+        GOARCH: ${{ matrix.go-arch }}
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: '*.tar.xz'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -26,8 +26,10 @@ var buildJSONConfigCommand = &cobra.Command{
 // nolint:gochecknoinits
 func init() {
 	buildConfigCommand.Flags().BoolP("no-automatic-rewrite", "", false, "Disable automatic ~/.ssh/config file regeneration")
+	buildConfigCommand.Flags().BoolP("use-proxy-jump", "", false, "Use ProxyJump instead of ProxyCommand")
 	buildConfigCommand.Flags().BoolP("expand", "e", false, "Expand all fields")
 	buildConfigCommand.Flags().BoolP("ignore-known-hosts", "", false, "Ignore known-hosts file")
+	buildConfigCommand.Flags().BoolP("no-header", "", false, "Suppress header generation")
 	_ = viper.BindPFlags(buildConfigCommand.Flags())
 
 	buildJSONConfigCommand.Flags().BoolP("expand", "e", false, "Expand all fields")
@@ -60,6 +62,15 @@ func runBuildConfigCommand(cmd *cobra.Command, args []string) error {
 	if viper.GetBool("no-automatic-rewrite") {
 		conf.DisableAutomaticRewrite()
 	}
+
+	if viper.GetBool("use-proxy-jump") {
+		conf.UseProxyJump()
+	}
+
+	if viper.GetBool("no-header") {
+		conf.SuppressHeaderGeneration()
+	}
+
 	return conf.WriteSSHConfigTo(os.Stdout)
 }
 
